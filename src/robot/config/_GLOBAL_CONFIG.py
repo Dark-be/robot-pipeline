@@ -1,0 +1,17 @@
+import os
+
+current_file = os.path.abspath(__file__)
+current_dir = os.path.dirname(current_file)
+
+ROOT_DIR = os.path.join(current_dir, "../../../")
+
+CONFIG_DIR = os.path.join(ROOT_DIR, "config")
+POLICY_DIR = os.path.join(ROOT_DIR, "policy")
+
+ROBOTS_PATH = os.path.join(ROOT_DIR, "assets/robots")
+DATA_PATH = os.path.join(ROOT_DIR, "data")
+COLLECT_CONFIG_PATH = os.path.join(ROOT_DIR, "collect_cfg")
+THIRD_PARTY_PATH = os.path.join(ROOT_DIR, "third_party")
+LOG_PATH = os.path.join(ROOT_DIR, "logs")
+
+POLLING_INTERVAL = 0.0001
