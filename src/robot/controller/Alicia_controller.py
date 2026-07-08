@@ -62,7 +62,7 @@ class AliciaController(ArmController):
 		if state is None:
 			return {"joint": None, "gripper": None, "eef": None}
 		offset = [0, -2.0, 0.4, 0, 0.6, 0]  # SDK 角度偏移（弧度），需要根据实际情况调整
-		multiplier = [1, -1, -1, -1, -1, -1]
+		multiplier = [1, -1.3, -1, -1, -1, -1]
 		joint = np.asarray(state.angles, dtype=float)
 		joint = np.array([(joint[i] + offset[i]) * multiplier[i] for i in range(6)], dtype=float)
 		gripper_raw = float(state.gripper)  # SDK: 0-1000
