@@ -2,12 +2,15 @@ INFO_LEVEL: INFO  # DEBUG, INFO, ERROR
 
 collect:
   # 用于文件夹命名
-  task_name: stack_bowls
-  # 用于文件夹命名
-  type: test
-  # data/stack_bowls/alicia_piper/***.hdf5
-
   save_dir: ./data/
+  task_name: put_cup_on_coaster
+  type: test
+  # eg.
+  # save_dir: ./data/
+  # task_name: stack_bowls
+  # type: test
+  # 保存路径: data/stack_bowls/test/***.hdf5
+
   save_format: hdf5
   num_episode: 50
 

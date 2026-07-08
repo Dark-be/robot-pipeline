@@ -50,7 +50,7 @@ class RealsenseSensor(BaseVisionSensor):
             # Start streaming
             try:
                 self.pipeline.start(self.config)
-                print(f"Started camera: {self.name} (SN: {serial})")
+                debug_print(self.name, f"Started realsense camera: {self.name} (SN: {serial})", "INFO")
             except RuntimeError as e:
                 raise RuntimeError(f"Error starting camera: {str(e)}")
         except Exception as e:

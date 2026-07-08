@@ -1,22 +1,40 @@
 import time
 from robot.utils.base.data_handler import debug_print, read_key, KEY_DICT
 from .base_env import BaseEnv
+import rerun as rr
+
 # 数据收集环境，负责控制数据收集的流程和逻辑
 class CollectEnv(BaseEnv):
     def __init__(self, base_cfg):
         super().__init__(base_cfg=base_cfg)
-        self.success_num, self.episode_num = 0, 0
-        self.finish_flag = False
+        self.enable_rerun = False
+    
+    def set_up(self):
+        super().set_up()
+        if self.enable_rerun:
+            rr.init("collection", spawn=False)
+            server_url = rr.serve_grpc(
+                grpc_port=9876,
+                server_memory_limit="1GiB",
+                newest_first=False,
+                cors_allow_origin=["*"]
+            )
+            debug_print("COLLECT", f"Rerun gRPC 服务器已启动: {server_url}", "INFO")
+            rr.serve_web_viewer(
+                web_port=9090,  # Web 界面端口
+                open_browser=False,  # 自动打开浏览器
+                # connect_to=server_url  # 连接到 gRPC 服务器
+            )
 
     # 收集一个回合的数据，直到用户按下Enter键或脚踏开关触发结束
     def collect_one_episode(self):
         if self.finish_flag:
             debug_print("COLLECT", "Data collection has been finished by user. Skipping collect_one_episode.", "INFO")
             return
+        
         # 重置机器人状态，等待用户准备好并按下Enter键开始数据收集
         self.robot.reset()
         debug_print("COLLECT", "Waiting for robot ready and Enter key...", "INFO")
-        
         # 检查配置文件中是否指定了数据收集的频率，默认为30Hz
         if 'collect' not in self.base_cfg or 'save_freq' not in self.base_cfg['collect']:
             debug_print("COLLECT", "Missing 'save_freq' in config. Using default 30Hz.", "WARNING")
@@ -30,7 +48,9 @@ class CollectEnv(BaseEnv):
         while not self.robot.is_start():
             debug_print("COLLECT", "Robot not started yet, verify hardware connection.", "WARNING")
             time.sleep(1)
+
         debug_print("COLLECT", "Robot READY. Press s to start recording... or q to quit.", "INFO")
+        
         run_flag = True
         while run_flag:
             ch = read_key()
@@ -45,17 +65,28 @@ class CollectEnv(BaseEnv):
         debug_print("COLLECT", "Recording... Press e to finish.", "INFO")
 
         avg_collect_time, collect_num = 0.0, 0
+
         while True:
+            rr.set_time("frame", sequence=collect_num)
             start_time = time.monotonic()
             data = self.robot.get_obs()
 
             self.robot.sync()
             self.robot.collect(data)
+
+            if self.enable_rerun:
+                self.robot.visualize()
+
             # 检查用户是否按下结束数据收集的键
             ch = read_key()
             if ch == KEY_DICT["END"]:
                 self.robot.collect_finish(self.episode_idx)
                 break
+            elif ch == KEY_DICT["QUIT"]:
+                debug_print("COLLECT", "Data collection interrupted by user (q pressed). Exiting.", "WARNING")
+                self.finish_flag = True
+                return
+            
             collect_num += 1
 
             # 控制数据收集的频率，确保按照指定的save_freq进行数据保存

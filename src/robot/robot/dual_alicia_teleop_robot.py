@@ -12,6 +12,7 @@ from robot.sensor.realsense_sensor import RealsenseSensor
 
 from robot.utils.base.data_handler import debug_print
 
+import rerun as rr
 
 class Dual_Alicia_Teleop_Robot(Robot):
 
@@ -97,6 +98,14 @@ class Dual_Alicia_Teleop_Robot(Robot):
         }
         self.move(move_data)
 
+    def visualize(self):
+        data = self.sensor_data
+        for cam_name, cam_data in data.items():
+            img_bytes = cam_data.get("color")
+            if img_bytes is None:
+                debug_print(self.type, f"No color image data for {cam_name}. Skipping visualization.", "WARNING")
+                continue
+            rr.log(f"cameras/{cam_name}", rr.EncodedImage(contents=img_bytes, media_type="image/jpeg"))
 
     def sync(self):
         # start_time = time.monotonic()

@@ -16,13 +16,13 @@ dependencies = [
   "h5py",       # 数据存储
   "pyyaml",     # 配置文件解析
   "opencv-python",  # 计算机视觉
-  "rerun-sdk==0.23.1",  # 可视化工具
+  "rerun-sdk==0.32.0",  # 可视化工具
   "piper-sdk>=0.6.1",
   "pyrealsense2>=2.58.1.10581",
   "v4l2-python3>=0.3.5",
   "ipython>=8.39.0",
-  "torch==2.7.0+cu128",
-  "torchvision==0.22.0+cu128"
+#  "torch==2.7.0+cu128",
+#  "torchvision==0.22.0+cu128"
 ]
 
 [project.optional-dependencies]

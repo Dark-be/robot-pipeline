@@ -240,6 +240,9 @@ class Robot:
                     # print(f"move_data before removing keys: {move_data}")
                     self.move(move_data, key_banned=key_banned)
 
+    def visualize(self):
+        return
+
 def remove_duplicate_keys(source_dict, keys_to_remove):
     return {k: v for k, v in source_dict.items() if k not in keys_to_remove}
 
