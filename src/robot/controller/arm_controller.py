@@ -26,12 +26,6 @@ class ArmController(Controller):
             arm_info["eef"] = state["eef"]
         if "gripper" in self.collect_info:
             arm_info["gripper"] = state["gripper"]
-        if "action" in self.collect_info:
-            arm_info["action"] = state["action"]
-        if "velocity" in self.collect_info:
-            arm_info["velocity"] = state["velocity"]
-        if "force" in self.collect_info:
-            arm_info["force"] = state["force"]
         return arm_info
     # 子类需要实现的机械臂移动方法，接受一个包含移动信息的字典和一个表示是否为增量的布尔值
     def move_controller(self, move_data:Dict[str, Any], is_delta=False):

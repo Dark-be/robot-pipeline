@@ -72,6 +72,7 @@ class Robot:
     # 完成一次数据采集，写入额外文件
     # 包括各个部件的采集信息类型
     def collect_finish(self, episode_id=None):
+        debug_print(self.type, f"Total frame:{episode_id}")
         if self.collector is None:
             raise ValueError("Can't find collector!")
         

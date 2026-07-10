@@ -28,6 +28,7 @@ def main():
     print("按 Enter 键停止服务器...")
     try:
         while True:
+            
             time.sleep(1)
             rr.log("data", rr.Boxes3D(half_sizes=[height, 2.0, 1.0]))
             height+=1

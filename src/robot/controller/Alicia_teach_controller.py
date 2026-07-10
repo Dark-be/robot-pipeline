@@ -8,6 +8,7 @@ from robot.controller.arm_controller import ArmController
 from robot.controller.Alicia_controller import AliciaController
 from robot.utils.base.data_handler import debug_print
 
+# 利用共享内存和多进程实现 Alicia 示教臂的状态采集，避免SDK状态采集阻塞主线程，确保数据采集的实时性和稳定性。
 class AliciaTeachController(ArmController):
 	"""Alicia 示教臂 Controller。
 
@@ -61,10 +62,10 @@ class AliciaTeachController(ArmController):
 		data = self.shared_array.copy()
 
 		return {
-      "joint": data[:6],
-      "gripper": data[6],
-			"eef": None
-    }
+      		"joint": data[:6],
+      		"gripper": data[6],
+			"eef": [0,0,0,0,0,0]
+    	}
 		
 	def stop(self):
 		if self.shm:

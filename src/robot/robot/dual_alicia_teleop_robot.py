@@ -11,6 +11,7 @@ from robot.sensor.v4l2_sensor import V4l2Sensor
 from robot.sensor.realsense_sensor import RealsenseSensor
 
 from robot.utils.base.data_handler import debug_print
+from robot.utils.kenimatics import get_tool_position
 
 import rerun as rr
 
@@ -71,7 +72,7 @@ class Dual_Alicia_Teleop_Robot(Robot):
         self.sensors["image"]["cam_right_wrist"].set_up(device=right_cam_serial, is_depth=False, is_jpeg=True)
 
         # 设置数据记录类型，slave 同时记录关节和夹爪状态
-        self.set_collect_type({"arm": ["joint", "gripper"], "image": ["color"]})
+        self.set_collect_type({"arm": ["joint", "gripper", "eef"], "image": ["color"]})
         debug_print(self.type, f"[{datetime.now():%Y-%m-%d %H:%M:%S}] Setup complete.", "INFO")
         time.sleep(1)
 
@@ -109,7 +110,6 @@ class Dual_Alicia_Teleop_Robot(Robot):
 
     def sync(self):
         # start_time = time.monotonic()
-
         master_left_data = self.controller_data.get("master_left_arm", {})
         master_right_data = self.controller_data.get("master_right_arm", {})
         if not master_left_data or not master_right_data:
@@ -121,6 +121,9 @@ class Dual_Alicia_Teleop_Robot(Robot):
         if joint_left is None or joint_right is None:
             debug_print(self.type, "Joint data from master controllers is missing. Skipping sync.", "WARNING")
             return
+        
+        
+
         gripper_left = master_left_data.get("gripper")
         gripper_right = master_right_data.get("gripper")
         if gripper_left is None or gripper_right is None:

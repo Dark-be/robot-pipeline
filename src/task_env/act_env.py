@@ -9,6 +9,8 @@ from einops import rearrange
 from robot.utils.base.data_handler import debug_print, read_key, KEY_DICT
 from .base_env import BaseEnv
 from .policy import ACTPolicy
+import threading
+from collections import deque
 
 def load_policy(policy_cfg):
     """加载模型 checkoint 和归一化参数"""
@@ -61,6 +63,7 @@ _DEFAULT_DUAL_ARM_MAPPING: List[Dict[str, Any]] = [
 class ACTEnv(BaseEnv):
     def __init__(self, base_cfg):
         super().__init__(base_cfg=base_cfg)
+        self.name = "ACTEnv"
 
         self.policy_config = base_cfg.get("act_policy", {})
         debug_print("ACTEnv", f"Policy config: {self.policy_config}", "INFO")
@@ -72,11 +75,26 @@ class ACTEnv(BaseEnv):
         self.max_timesteps = self.policy_config['max_timesteps']
         self.camera_names = ["cam_head", "cam_right_wrist"]  # 默认相机列表
 
+        self.inference_thread = None
+        self.stop_thread = False
+        
+        # 共享变量（线程安全）
+        self.lock = threading.Lock()
+        self.latest_obs = None  # 最新的观测数据
+        self.latest_action = None  # 最新的推理结果
+        self.action_ready = False  # 是否有新的动作可用
+        self.inference_interval = 0.2  # 推理间隔（20Hz）
+        self.control_fps = 20
+
     def set_up(self):
         super().set_up()
         self.policy, self.pre_process, self.post_process = load_policy(self.policy_config)
 
-        debug_print("ACTEnv", "Environment setup complete.", "INFO")
+        self.stop_thread = False
+        self.inference_thread = threading.Thread(target=self.inference_loop, daemon=True)
+        self.inference_thread.start()
+    
+    debug_print("ACTEnv", "Environment setup complete.", "INFO")
 
     def trans_obs_2_act(self, data):
         controller_data, sensor_data = data[0], data[1]
@@ -103,7 +121,6 @@ class ACTEnv(BaseEnv):
             if gripper_index is not None and gripper_index < 14:
                 qpos[gripper_index] = float(gripper[0]) if len(gripper) > 0 else 0.0
 
-        print(f"[PolicyEnv] qpos_parts: {qpos[7:14]}")
 
         # --- build images --------------------------------------------------
         images: Dict[str, np.ndarray] = {}
@@ -146,7 +163,6 @@ class ACTEnv(BaseEnv):
                     "joint": np.zeros(6, dtype=np.float32),
                     "gripper": 1.0,
                 }
-            print(f"[PolicyEnv] move_data for {ctrl_name}: {move_data['arm'][ctrl_name]}")
 
         return move_data
 
@@ -161,12 +177,9 @@ class ACTEnv(BaseEnv):
         image = torch.from_numpy(image / 255.0).float().cuda().unsqueeze(0)
         return image
     
-    def run_deployment(self):
-        self.robot.reset()
-        """
-        主推理循环。
-        target_qpos 是 14 维 numpy array。
-        """
+    def inference_loop(self):
+        debug_print("ACTEnv", "Inference thread started", "INFO")
+        max_timesteps = self.max_timesteps
         # 如果启用时序平滑，则每步只查询一次策略，否则每 chunk_size 步查询一次
         query_frequency = self.chunk_size if not self.temporal_agg else 1
         state_dim = 14
@@ -174,71 +187,115 @@ class ACTEnv(BaseEnv):
             all_time_actions = torch.zeros(
                 [self.max_timesteps, self.max_timesteps + self.chunk_size, state_dim]
             ).cuda()
-        max_timesteps = self.max_timesteps
-        debug_print("ACTEnv", "Start interface", "INFO")
-
-        allow_step = 0
-        fps = 30
+        t = 0
         try:
             with torch.inference_mode():
-                for t in range(max_timesteps):
+                while not self.stop_thread:
                     start_time = time.monotonic()
+                    obs_copy = None
+                    with self.lock:
+                        if self.latest_obs is not None:
+                            obs_copy = {
+                                'qpos': self.latest_obs['qpos'].copy(),
+                                'images': {k: v.copy() for k, v in self.latest_obs['images'].items()}
+                            }
+                    if obs_copy is not None:
+                        curr_qpos = torch.from_numpy(self.pre_process(obs_copy["qpos"])).float().cuda().unsqueeze(0)
+                        curr_image = self.build_image_tensor(obs_copy)
 
-                    data = self.robot.get_obs()
-                    act_obs = self.trans_obs_2_act(data)
-                    if act_obs is None:
-                        debug_print("ACTEnv", f"Step {t}/{max_timesteps}: Missing camera data. Skipping step.", "WARNING")
-                        time.sleep(1 / fps)
-                        continue
-                    
-                    # 获取当前状态
+                        if t % query_frequency == 0:
+                            all_actions = self.policy(curr_qpos, curr_image)
 
-                    curr_qpos = torch.from_numpy(self.pre_process(act_obs["qpos"])).float().cuda().unsqueeze(0)
-                    curr_image = self.build_image_tensor(act_obs)
-                    
-                    # 查询策略
-                    if t % query_frequency == 0:
-                        all_actions = self.policy(curr_qpos, curr_image)
+                        if self.temporal_agg:
+                            # 时序平滑：对同一时刻的多个预测做指数加权
+                            all_time_actions[[t], t:t + self.chunk_size] = all_actions
+                            actions_for_step = all_time_actions[:, t]
+                            populated = torch.all(actions_for_step != 0, axis=1)
+                            actions_for_step = actions_for_step[populated]
+                            k = 0.01
+                            weights = np.exp(-k * np.arange(len(actions_for_step)))
+                            weights = weights / weights.sum()
+                            weights = torch.from_numpy(weights).cuda().unsqueeze(1)
+                            raw_action = (actions_for_step * weights).sum(dim=0, keepdim=True)
+                        else:
+                            raw_action = all_actions[:, t % query_frequency]
 
-                    if self.temporal_agg:
-                        # 时序平滑：对同一时刻的多个预测做指数加权
-                        all_time_actions[[t], t:t + self.chunk_size] = all_actions
-                        actions_for_step = all_time_actions[:, t]
-                        populated = torch.all(actions_for_step != 0, axis=1)
-                        actions_for_step = actions_for_step[populated]
-                        k = 0.01
-                        weights = np.exp(-k * np.arange(len(actions_for_step)))
-                        weights = weights / weights.sum()
-                        weights = torch.from_numpy(weights).cuda().unsqueeze(1)
-                        raw_action = (actions_for_step * weights).sum(dim=0, keepdim=True)
+                        raw_action = raw_action.squeeze(0).cpu().numpy()
+                        target_qpos = self.post_process(raw_action)
+
+                        # 更新共享动作（加锁）
+                        with self.lock:
+                            self.latest_action = target_qpos.copy()
+                            self.action_ready = True
+
+                        t += 1
+                        if t >= max_timesteps:
+                            self.stop_thread = True
+
+                    # 控制推理频率
+                    elapsed = time.monotonic() - start_time
+                    sleep_time = self.inference_interval - elapsed
+                    debug_print("ACTEnv", f"Step {t}/{max_timesteps} completed in {elapsed:.4f} seconds.", "INFO")
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+
+
+        except Exception as e:
+            debug_print("ACTEnv", f"Inference error: {e}", "ERROR")
+
+
+    def run_deployment(self):
+        self.robot.reset()
+
+        allow_step = 0
+        fps = self.control_fps
+        target_qpos = None
+        print("ok")
+        while allow_step <= 0:
+            ch = read_key()
+            if ch == KEY_DICT["CONTINUE"]:
+                allow_step = 100
+                print("[PolicyEnv] Continuing to next step.")
+                break
+            elif ch == KEY_DICT["QUIT"]:
+                print("[PolicyEnv] User requested exit.")
+                self.robot.reset()
+                return
+        try:
+            while not self.stop_thread:
+                start_time = time.monotonic()
+
+                # 传入推理
+                data = self.robot.get_obs()
+                act_obs = self.trans_obs_2_act(data)
+                if act_obs is not None:
+                    with self.lock:
+                        self.latest_obs = act_obs
+                
+                policy_qpos = None
+                with self.lock:
+                    if self.latest_action is not None:
+                        policy_qpos = self.latest_action.copy()
+
+                if policy_qpos is None:
+                    debug_print(self.name, f"No target", "WARNING")
+                else:
+                    debug_print(self.name, f"Policy: {policy_qpos[7:14]}", "INFO")
+                    if target_qpos is None:
+                        target_qpos = np.array(policy_qpos)
                     else:
-                        raw_action = all_actions[:, t % query_frequency]
-
-                    # 后处理 + 执行
-                    raw_action = raw_action.squeeze(0).cpu().numpy()
-                    target_qpos = self.post_process(raw_action)
-
+                        rate = 0.8
+                        target_qpos = np.array(policy_qpos) * rate + target_qpos * (1 - rate)
+                        if target_qpos[13] < 0.5:
+                            target_qpos[13] = 0.05
                     move_data = self.trans_act_action_to_move_data(target_qpos)
-
-                    while allow_step <= 0:
-                        ch = read_key()
-                        if ch == KEY_DICT["CONTINUE"]:
-                            allow_step = 10000
-                            print("[PolicyEnv] Continuing to next step.")
-                            break
-                        elif ch == KEY_DICT["QUIT"]:
-                            print("[PolicyEnv] User requested exit.")
-                            self.robot.reset()
-                            return
                     self.robot.move(move_data)
-                    allow_step -= 1
 
-                    elipsed_time = time.monotonic() - start_time
-                    debug_print("ACTEnv", f"Step {t}/{max_timesteps} completed in {elipsed_time:.4f} seconds.", "INFO")
-                    if elipsed_time < 1 / fps:
-                        time.sleep(1 / fps - elipsed_time)
-                    else:
-                        debug_print("ACTEnv", f"Step {t}/{max_timesteps} took longer than 1/{fps}s: {elipsed_time:.4f}s", "WARNING")
+                elapsed_time = time.monotonic() - start_time
+                if elapsed_time < 1 / fps:
+                    time.sleep(1 / fps - elapsed_time)
+                else:
+                    debug_print(self.name, "Overlimit", "WARNING")
 
         except KeyboardInterrupt:
             debug_print("ACTEnv", "User interrupted. Exiting.", "INFO")

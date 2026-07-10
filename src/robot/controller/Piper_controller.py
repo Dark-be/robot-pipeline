@@ -2,6 +2,7 @@ import numpy as np
 import time
 from robot.controller.arm_controller import ArmController
 from robot.utils.base.data_handler import debug_print
+from robot.utils.kenimatics import get_tool_position
 from piper_sdk import *
 
 # 基于ArmController的测试机械臂控制器类，包含机械臂状态获取和控制方法的简单实现，用于测试和调试
@@ -28,7 +29,7 @@ class PiperController(ArmController):
       log_to_file=False,
       log_file_path=None)
     self.piper.ConnectPort()
-    
+
     while( not self.piper.EnablePiper()):
       time.sleep(0.01)
     self.piper.MotionCtrl_2(0x01, 0x01, 40, 0x00)
@@ -42,6 +43,7 @@ class PiperController(ArmController):
   def get_state(self):
     if self.piper is None:
         raise RuntimeError("PiperController not set up. Call set_up() before get_state().")
+    
     joint_msgs = self.piper.GetArmJointMsgs().joint_state
     gripper_msgs = self.piper.GetArmGripperMsgs().gripper_state
     state = {}
@@ -57,8 +59,12 @@ class PiperController(ArmController):
       joint_msgs.joint_5,
       joint_msgs.joint_6
     ]) / 1000.0 / 180.0 * 3.14159  # Convert to radians
+
     state["gripper"] = gripper_msgs.grippers_angle / 100000.0
-    state["eef"] = None  # Piper SDK does not provide end-effector pose, set to None or you can implement your own IK if needed
+
+    
+    state["eef"] = [0,0,0,0,0,0]
+
     return state
   
   def set_joint(

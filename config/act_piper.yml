@@ -14,7 +14,7 @@ collect:
   skip_silent_frame: true
 
 act_policy:
-  ckpt_dir: ./policy/act/7-6
+  ckpt_dir: ./policy/act/
   chunk_size: 100
   hidden_dim: 512
   dim_feedforward: 3200

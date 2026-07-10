@@ -28,6 +28,6 @@ logs/
 
 /src/detr
 /test.py
-/te.py
+te.py
 
 /zmq
