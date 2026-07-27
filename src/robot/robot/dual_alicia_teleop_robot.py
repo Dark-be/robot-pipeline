@@ -11,9 +11,9 @@ from robot.sensor.v4l2_sensor import V4l2Sensor
 from robot.sensor.realsense_sensor import RealsenseSensor
 
 from robot.utils.base.data_handler import debug_print
-from robot.utils.kenimatics import get_tool_position
 
 import rerun as rr
+
 
 class Dual_Alicia_Teleop_Robot(Robot):
 
@@ -24,8 +24,8 @@ class Dual_Alicia_Teleop_Robot(Robot):
             "arm" : {
                 "master_left_arm": AliciaTeachController("master_left_arm"),
                 "master_right_arm": AliciaTeachController("master_right_arm"),
-                "slave_left_arm": PiperController("slave_left_arm", INFO="DEBUG"),
-                "slave_right_arm": PiperController("slave_right_arm", INFO="DEBUG"),
+                "slave_left_arm": PiperController("slave_left_arm"),
+                "slave_right_arm": PiperController("slave_right_arm"),
             },
         }
         self.sensors = {
@@ -38,7 +38,6 @@ class Dual_Alicia_Teleop_Robot(Robot):
 
     def set_up(self):
         super().set_up()
-
         master_port_left = self.robot_config["MASTER_PORT"]["left_arm"]
         master_port_right = self.robot_config["MASTER_PORT"]["right_arm"]
         slave_port_left = self.robot_config["SLAVE_PORT"]["left_arm"]
@@ -66,15 +65,40 @@ class Dual_Alicia_Teleop_Robot(Robot):
         self.controllers["arm"]["master_right_arm"].set_up(port=master_port_right)
         self.controllers["arm"]["slave_left_arm"].set_up(port=slave_port_left)
         self.controllers["arm"]["slave_right_arm"].set_up(port=slave_port_right)
-
         self.sensors["image"]["cam_head"].set_up(device=head_cam_serial, is_depth=False, is_jpeg=True)
         self.sensors["image"]["cam_left_wrist"].set_up(device=left_cam_serial, is_depth=False, is_jpeg=True)
         self.sensors["image"]["cam_right_wrist"].set_up(device=right_cam_serial, is_depth=False, is_jpeg=True)
-
+        
         # 设置数据记录类型，slave 同时记录关节和夹爪状态
         self.set_collect_type({"arm": ["joint", "gripper", "eef"], "image": ["color"]})
         debug_print(self.type, f"[{datetime.now():%Y-%m-%d %H:%M:%S}] Setup complete.", "INFO")
         time.sleep(1)
+
+    def play_once(self, episode: Dict[str, Any], key_banned=None):
+        left_action = episode["master_left_arm"]
+        right_action = episode["master_right_arm"]
+        move_data = {
+            "arm": {
+                "slave_left_arm": left_action,
+                "slave_right_arm": right_action,
+            },
+        }
+        self.move(move_data, key_banned=key_banned)
+    
+    def play_once_csv(self, action: np.array):
+        move_data = {
+            "arm": {
+                "slave_left_arm": {
+                    "joint": action[0:5].tolist(),
+                    "gripper": float(action[6]),
+                },
+                "slave_right_arm": {
+                    "joint": action[7:12].tolist(),
+                    "gripper": float(action[13]),
+                },
+            },
+        }
+        self.move(move_data)
 
     def reset(self):
         super().reset()

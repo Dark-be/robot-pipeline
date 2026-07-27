@@ -27,9 +27,8 @@ class Robot:
             self.collect_cfg = base_config["collect"]
             debug_print(self.type, f"Collect_cfg: \n {self.collect_cfg}", "INFO")
             self.collector = CollectAny(self.collect_cfg)
-
-        if not self.collect_cfg:
-            debug_print(self.type, "Can't find any valid section in config, Please check your config file.", "ERROR")
+        else:
+            debug_print(self.type, "Can't find any valid section in config, Please check your config file.", "WARNING")
         
         self.move_tolerance = self.robot_config.get("move_tolerance", 0.01)
         self.bias = self.robot_config.get("bias", None)
@@ -72,7 +71,6 @@ class Robot:
     # 完成一次数据采集，写入额外文件
     # 包括各个部件的采集信息类型
     def collect_finish(self, episode_id=None):
-        debug_print(self.type, f"Total frame:{episode_id}")
         if self.collector is None:
             raise ValueError("Can't find collector!")
         
@@ -98,16 +96,22 @@ class Robot:
     # 通用部分
     # 返回当前机器人的观测数据，包括控制器数据和传感器数据。如果任何传感器返回None，则返回[None, None]，表示数据获取失败。
     def get_obs(self):
+        self.get_controller_data()
+        self.get_sensor_data()
+        
+        return [self.controller_data.copy(), self.sensor_data.copy()]
+
+    def get_controller_data(self):
         if self.controllers is not None:
             for type_name, controller_type in self.controllers.items():
                 for controller_name, controller in controller_type.items():
                     self.controller_data[controller_name] = controller.get()
+
+    def get_sensor_data(self):
         if self.sensors is not None:
             for type_name, sensor_type in self.sensors.items(): 
                 for sensor_name, sensor in sensor_type.items():
                     self.sensor_data[sensor_name] = sensor.get()
-        
-        return [self.controller_data.copy(), self.sensor_data.copy()]
     
     # 主动断开所有控制器的连接，释放资源。遍历所有控制器类型和控制器实例，调用每个控制器的disconnect方法，并打印调试信息。
     def disconnect(self):
@@ -133,22 +137,6 @@ class Robot:
                 else:
                     controller_action = remove_duplicate_keys(controller_action, key_banned)
                     self.controllers[controller_type_name][controller_name].move(controller_action, is_delta=False)
-
-    # 检查 10 次，如果连续 10 次都没有检测到移动，则认为移动完成，退出循环
-    def move_blocking(self, move_data, check_freq=30, key_banned=None):
-        stop_num = 0
-        self.move(move_data, key_banned=key_banned)
-
-        while True:
-            time.sleep(1 / check_freq)
-
-            if not self.is_move():
-                stop_num += 1
-            else:
-                stop_num = 0
-            
-            if stop_num > 10:
-                break
 
     def is_start(self):
         debug_print(self.type, "your are using is_start(), this will return True.", "DEBUG")
@@ -206,25 +194,26 @@ class Robot:
             return False
 
     # 回放部分
-    def replay(self, data_path, fps=30, key_banned=None, is_collect=False, episode_id=None):
+    def replay(self, data_path, fps=30, key_banned=None, is_collect=False, episode_id=0):
         time_interval = 1 / fps
         episode_data = dict_to_list(hdf5_groups_to_dict(data_path))
-        
-        now_time = time.monotonic()
+
         for current_action in episode_data:
-            start_time = time.monotonic()
+            loop_start = time.monotonic()
+            self.play_once(current_action, key_banned)
             if is_collect:
                 data = self.get_obs()
                 self.collect(data)
-            
-            self.play_once(current_action, key_banned)
 
-            elpased_time = now_time - start_time
-            while elpased_time < time_interval:
+            now_time = time.monotonic()
+            elpased = now_time - loop_start
+            if elpased < time_interval:
                 now_time = time.monotonic()
-                time.sleep(time_interval - elpased_time)
+                time.sleep(time_interval - elpased)
         if is_collect:
             self.finish(episode_id)
+        debug_print(self.type, "Finish replay", "INFO")
+        self.disconnect()
     
     def play_once(self, episode: Dict[str, Any], key_banned=None):
         for controller_type, controller_group in self.controllers.items():
@@ -240,6 +229,30 @@ class Robot:
                     # print(f"key_banned: {key_banned}")
                     # print(f"move_data before removing keys: {move_data}")
                     self.move(move_data, key_banned=key_banned)
+
+    def replay_csv(self, actions: np.ndarray, fps=30, is_collect=False, episode_id=0):
+        time_interval = 1 / fps
+        debug_print(self.type, f"Start replaying {len(actions)} actions from CSV.", "INFO")
+
+        for current_action in actions:
+            loop_start = time.monotonic()
+            self.play_once_csv(current_action)
+            if is_collect:
+                data = self.get_obs()
+                self.collect(data)
+
+            now_time = time.monotonic()
+            elpased = now_time - loop_start
+            if elpased < time_interval:
+                now_time = time.monotonic()
+                time.sleep(time_interval - elpased)
+        if is_collect:
+            self.finish(episode_id)
+        debug_print(self.type, "Finish replay", "INFO")
+        self.disconnect()
+
+    def play_once_csv(self, action: np.ndarray):
+        raise NotImplementedError("play_once_csv method should be implemented in the subclass.")
 
     def visualize(self):
         return

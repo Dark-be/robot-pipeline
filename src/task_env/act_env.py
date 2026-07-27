@@ -8,18 +8,57 @@ from einops import rearrange
 # import torchvision.transforms as transforms
 from robot.utils.base.data_handler import debug_print, read_key, KEY_DICT
 from .base_env import BaseEnv
-from .policy import ACTPolicy
 import threading
-from collections import deque
+import rerun as rr
 
-def load_policy(policy_cfg):
+import torch.nn as nn
+from torch.nn import functional as F
+import torchvision.transforms as transforms
+
+from detr.main import build_ACT_model_and_optimizer
+import IPython
+e = IPython.embed
+
+class ACTPolicy(nn.Module):
+    def __init__(self, policy_cfg: Dict[str, Any]):
+        super().__init__()
+        model, optimizer = build_ACT_model_and_optimizer(policy_cfg)
+        self.model = model # CVAE decoder
+        self.optimizer = optimizer
+        self.kl_weight = policy_cfg['kl_weight']
+        print(f'KL Weight {self.kl_weight}')
+
+    def __call__(self, qpos, image, actions=None, is_pad=None):
+        env_state = None
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                         std=[0.229, 0.224, 0.225])
+        image = normalize(image)
+        if actions is not None: # training time
+            actions = actions[:, :self.model.num_queries]
+            is_pad = is_pad[:, :self.model.num_queries]
+
+            a_hat, is_pad_hat, (mu, logvar) = self.model(qpos, image, env_state, actions, is_pad)
+            total_kld, dim_wise_kld, mean_kld = kl_divergence(mu, logvar)
+            loss_dict = dict()
+            all_l1 = F.l1_loss(actions, a_hat, reduction='none')
+            l1 = (all_l1 * ~is_pad.unsqueeze(-1)).mean()
+            loss_dict['l1'] = l1
+            loss_dict['kl'] = total_kld[0]
+            loss_dict['loss'] = loss_dict['l1'] + loss_dict['kl'] * self.kl_weight
+            return loss_dict
+        else: # inference time
+            a_hat, _, (_, _) = self.model(qpos, image, env_state) # no action, sample from prior
+            return a_hat
+        
+
+def load_policy(policy_cfg: Dict[str, Any]):
     """加载模型 checkoint 和归一化参数"""
     ckpt_path = os.path.join(policy_cfg['ckpt_dir'], 'policy_best.ckpt')
     stats_path = os.path.join(policy_cfg['ckpt_dir'], 'dataset_stats.pkl')
 
     camera_names = policy_cfg['camera_names']
 
-    policy_config = {
+    override_policy_cfg = {
         'lr': 1e-5,
         'num_queries': policy_cfg['chunk_size'],
         'kl_weight': 10,
@@ -33,7 +72,7 @@ def load_policy(policy_cfg):
         'camera_names': camera_names,
     }
 
-    policy = ACTPolicy(policy_config)
+    policy = ACTPolicy(override_policy_cfg)
     policy.load_state_dict(torch.load(ckpt_path))
     policy.cuda()
     policy.eval()
@@ -46,6 +85,21 @@ def load_policy(policy_cfg):
     post_process = lambda a: a * stats['action_std'] + stats['action_mean']
 
     return policy, pre_process, post_process
+
+def kl_divergence(mu, logvar):
+    batch_size = mu.size(0)
+    assert batch_size != 0
+    if mu.data.ndimension() == 4:
+        mu = mu.view(mu.size(0), mu.size(1))
+    if logvar.data.ndimension() == 4:
+        logvar = logvar.view(logvar.size(0), logvar.size(1))
+
+    klds = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp())
+    total_kld = klds.sum(1).mean(0, True)
+    dimension_wise_kld = klds.mean(0)
+    mean_kld = klds.mean(1).mean(0, True)
+
+    return total_kld, dimension_wise_kld, mean_kld
 
 _DEFAULT_DUAL_ARM_MAPPING: List[Dict[str, Any]] = [
     {
@@ -64,46 +118,58 @@ class ACTEnv(BaseEnv):
     def __init__(self, base_cfg):
         super().__init__(base_cfg=base_cfg)
         self.name = "ACTEnv"
+        self.enable_rerun = base_cfg.get("enable_rerun", False)
 
-        self.policy_config = base_cfg.get("act_policy", {})
-        debug_print("ACTEnv", f"Policy config: {self.policy_config}", "INFO")
+        self.policy_cfg = base_cfg.get("act_policy", {})
+        debug_print(self.name, f"Policy config: {self.policy_cfg}", "INFO")
         self.policy, self.pre_process, self.post_process = None, None, None
-        self.chunk_size = self.policy_config['chunk_size']
-        self.hidden_dim = self.policy_config['hidden_dim']
-        self.dim_feedforward = self.policy_config['dim_feedforward']
-        self.temporal_agg = self.policy_config['temporal_agg']
-        self.max_timesteps = self.policy_config['max_timesteps']
-        self.camera_names = ["cam_head", "cam_right_wrist"]  # 默认相机列表
+        self.chunk_size = self.policy_cfg['chunk_size']
+        self.hidden_dim = self.policy_cfg['hidden_dim']
+        self.dim_feedforward = self.policy_cfg['dim_feedforward']
+        self.temporal_agg = self.policy_cfg['temporal_agg']
+        self.max_timesteps = self.policy_cfg['max_timesteps']
+        self.camera_names = self.policy_cfg['camera_names']  # 默认相机列表
 
+        # 共享变量（线程安全）
         self.inference_thread = None
         self.stop_thread = False
-        
-        # 共享变量（线程安全）
         self.lock = threading.Lock()
-        self.latest_obs = None  # 最新的观测数据
         self.latest_action = None  # 最新的推理结果
-        self.action_ready = False  # 是否有新的动作可用
-        self.inference_interval = 0.2  # 推理间隔（20Hz）
-        self.control_fps = 20
+        self.inference_fps = 10
+        self.control_fps = 30
 
     def set_up(self):
         super().set_up()
-        self.policy, self.pre_process, self.post_process = load_policy(self.policy_config)
+        self.policy, self.pre_process, self.post_process = load_policy(self.policy_cfg)
 
         self.stop_thread = False
         self.inference_thread = threading.Thread(target=self.inference_loop, daemon=True)
         self.inference_thread.start()
-    
-    debug_print("ACTEnv", "Environment setup complete.", "INFO")
 
-    def trans_obs_2_act(self, data):
+        if self.enable_rerun:
+            rr.init("collection", spawn=False)
+            server_url = rr.serve_grpc(
+                grpc_port=9876,
+                server_memory_limit="1GiB",
+                newest_first=False,
+                cors_allow_origin=["*"]
+            )
+            debug_print("COLLECT", f"Rerun gRPC 服务器已启动: {server_url}", "INFO")
+            rr.serve_web_viewer(
+                web_port=9090,  # Web 界面端口
+                open_browser=False,  # 自动打开浏览器
+                # connect_to=server_url  # 连接到 gRPC 服务器
+            )
+    
+        debug_print(self.name, "Environment setup complete.", "INFO")
+
+    def trans_obs_to_act_input(self, data):
         controller_data, sensor_data = data[0], data[1]
         # --- build qpos ----------------------------------------------------
         qpos = np.zeros(14, dtype=np.float32)
         for arm in _DEFAULT_DUAL_ARM_MAPPING:
             ctrl_name = arm["controller_name"]
-            if ctrl_name == "slave_left_arm":
-                continue
+
             ctrl_data = controller_data.get(ctrl_name, {})
 
             joint = np.asarray(ctrl_data.get("joint", []), dtype=np.float32).ravel()
@@ -158,11 +224,11 @@ class ACTEnv(BaseEnv):
                 "joint": joint_vals,
                 "gripper": np.clip(gripper_val, 0.0, 1.0),
             }
-            if ctrl_name == "slave_left_arm":
-                move_data["arm"][ctrl_name] = {
-                    "joint": np.zeros(6, dtype=np.float32),
-                    "gripper": 1.0,
-                }
+            # if ctrl_name == "slave_left_arm":
+            #     move_data["arm"][ctrl_name] = {
+            #         "joint": np.zeros(6, dtype=np.float32),
+            #         "gripper": 1.0,
+            #     }
 
         return move_data
 
@@ -178,8 +244,9 @@ class ACTEnv(BaseEnv):
         return image
     
     def inference_loop(self):
-        debug_print("ACTEnv", "Inference thread started", "INFO")
+        debug_print(self.name, "Inference thread started", "INFO")
         max_timesteps = self.max_timesteps
+        inference_interval = 1 / self.inference_fps
         # 如果启用时序平滑，则每步只查询一次策略，否则每 chunk_size 步查询一次
         query_frequency = self.chunk_size if not self.temporal_agg else 1
         state_dim = 14
@@ -187,29 +254,32 @@ class ACTEnv(BaseEnv):
             all_time_actions = torch.zeros(
                 [self.max_timesteps, self.max_timesteps + self.chunk_size, state_dim]
             ).cuda()
-        t = 0
+        timestep = 0
+
         try:
             with torch.inference_mode():
                 while not self.stop_thread:
-                    start_time = time.monotonic()
-                    obs_copy = None
-                    with self.lock:
-                        if self.latest_obs is not None:
-                            obs_copy = {
-                                'qpos': self.latest_obs['qpos'].copy(),
-                                'images': {k: v.copy() for k, v in self.latest_obs['images'].items()}
-                            }
-                    if obs_copy is not None:
-                        curr_qpos = torch.from_numpy(self.pre_process(obs_copy["qpos"])).float().cuda().unsqueeze(0)
-                        curr_image = self.build_image_tensor(obs_copy)
+                    loop_start = time.monotonic()
+                    tick_1 = 0
+                    
+                    rr.set_time("frame", sequence=timestep)
 
-                        if t % query_frequency == 0:
+                    obs = self.robot.get_obs()
+                    self.robot.visualize()
+                    act_obs = self.trans_obs_to_act_input(obs)
+
+                    if act_obs is not None:
+                        curr_qpos = torch.from_numpy(self.pre_process(act_obs["qpos"])).float().cuda().unsqueeze(0)
+                        curr_image = self.build_image_tensor(act_obs)
+                        tick_1 = time.monotonic() - loop_start
+                        if timestep % query_frequency == 0:
                             all_actions = self.policy(curr_qpos, curr_image)
-
+                        tick_2 = time.monotonic() - loop_start - tick_1
                         if self.temporal_agg:
+                            f = 0
                             # 时序平滑：对同一时刻的多个预测做指数加权
-                            all_time_actions[[t], t:t + self.chunk_size] = all_actions
-                            actions_for_step = all_time_actions[:, t]
+                            all_time_actions[[timestep], timestep:timestep + self.chunk_size] = all_actions
+                            actions_for_step = all_time_actions[:, timestep + f]
                             populated = torch.all(actions_for_step != 0, axis=1)
                             actions_for_step = actions_for_step[populated]
                             k = 0.01
@@ -218,7 +288,7 @@ class ACTEnv(BaseEnv):
                             weights = torch.from_numpy(weights).cuda().unsqueeze(1)
                             raw_action = (actions_for_step * weights).sum(dim=0, keepdim=True)
                         else:
-                            raw_action = all_actions[:, t % query_frequency]
+                            raw_action = all_actions[:, timestep % query_frequency]
 
                         raw_action = raw_action.squeeze(0).cpu().numpy()
                         target_qpos = self.post_process(raw_action)
@@ -226,80 +296,71 @@ class ACTEnv(BaseEnv):
                         # 更新共享动作（加锁）
                         with self.lock:
                             self.latest_action = target_qpos.copy()
-                            self.action_ready = True
 
-                        t += 1
-                        if t >= max_timesteps:
+                        timestep += 1
+                        if timestep >= max_timesteps:
                             self.stop_thread = True
 
                     # 控制推理频率
-                    elapsed = time.monotonic() - start_time
-                    sleep_time = self.inference_interval - elapsed
-                    debug_print("ACTEnv", f"Step {t}/{max_timesteps} completed in {elapsed:.4f} seconds.", "INFO")
+                    elapsed = time.monotonic() - loop_start
+                    sleep_time = inference_interval - elapsed
+                    debug_print(self.name, f"Trans Data completed in {tick_1:.4f} seconds.", "WARNING")
+                    debug_print(self.name, f"Query policy time: {tick_2:.4f} seconds.", "INFO")
+                    debug_print(self.name, f"Step {timestep}/{max_timesteps} completed in {elapsed:.4f} seconds.", "INFO")
                     if sleep_time > 0:
                         time.sleep(sleep_time)
 
 
         except Exception as e:
-            debug_print("ACTEnv", f"Inference error: {e}", "ERROR")
-
+            debug_print(self.name, f"Inference error: {e}", "ERROR")
 
     def run_deployment(self):
         self.robot.reset()
 
-        allow_step = 0
-        fps = self.control_fps
+        control_interval = 1 / self.control_fps
         target_qpos = None
-        print("ok")
-        while allow_step <= 0:
+        debug_print(self.name, "Deployment started. Waiting for user input to continue.", "INFO")
+        while True:
             ch = read_key()
-            if ch == KEY_DICT["CONTINUE"]:
-                allow_step = 100
-                print("[PolicyEnv] Continuing to next step.")
+            if ch == KEY_DICT["START"]:
+                debug_print(self.name, "Start to execute.", "INFO")
                 break
             elif ch == KEY_DICT["QUIT"]:
-                print("[PolicyEnv] User requested exit.")
+                debug_print(self.name, "User requested exit.", "INFO")
                 self.robot.reset()
                 return
+        policy_qpos = None
         try:
             while not self.stop_thread:
-                start_time = time.monotonic()
-
-                # 传入推理
-                data = self.robot.get_obs()
-                act_obs = self.trans_obs_2_act(data)
-                if act_obs is not None:
-                    with self.lock:
-                        self.latest_obs = act_obs
+                loop_start = time.monotonic()
                 
-                policy_qpos = None
                 with self.lock:
                     if self.latest_action is not None:
                         policy_qpos = self.latest_action.copy()
 
                 if policy_qpos is None:
-                    debug_print(self.name, f"No target", "WARNING")
+                    debug_print(self.name, f"No policy_qpos available", "WARNING")
                 else:
-                    debug_print(self.name, f"Policy: {policy_qpos[7:14]}", "INFO")
+                    # debug_print(self.name, f"Policy: {np.round(policy_qpos[7:14], 4)}", "INFO")
                     if target_qpos is None:
                         target_qpos = np.array(policy_qpos)
                     else:
-                        rate = 0.8
+                        rate = 0.3
                         target_qpos = np.array(policy_qpos) * rate + target_qpos * (1 - rate)
-                        if target_qpos[13] < 0.5:
-                            target_qpos[13] = 0.05
+                        debug_print(self.name, f"Target: {np.round(target_qpos[7:14], 4)}", "INFO")
+                        target_qpos[13] = policy_qpos[13] 
                     move_data = self.trans_act_action_to_move_data(target_qpos)
                     self.robot.move(move_data)
 
-                elapsed_time = time.monotonic() - start_time
-                if elapsed_time < 1 / fps:
-                    time.sleep(1 / fps - elapsed_time)
+                elapsed = time.monotonic() - loop_start
+                if elapsed < control_interval:
+                    time.sleep(control_interval - elapsed)
                 else:
-                    debug_print(self.name, "Overlimit", "WARNING")
+                    debug_print(self.name, "Move command execute over time limit", "WARNING")
 
         except KeyboardInterrupt:
-            debug_print("ACTEnv", "User interrupted. Exiting.", "INFO")
+            debug_print(self.name, "User interrupted. Exiting.", "INFO")
         finally:
             self.robot.reset()
             self.env_finish()
-            debug_print("ACTEnv", "Deployment finished. Robot reset.", "INFO")
+            debug_print(self.name, "Deployment finished. Robot reset.", "INFO")

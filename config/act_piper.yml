@@ -1,26 +1,14 @@
 INFO_LEVEL: INFO  # DEBUG, INFO, ERROR
-collect:
-  # 用于文件夹命名
-  task_name: stack_bowls
-  # 用于文件夹命名
-  type: alicia_piper
-  # data/stack_bowls/alicia_piper/***.hdf5
-
-  save_dir: ./data/
-  save_format: hdf5
-  num_episode: 50
-
-  save_freq: 30
-  skip_silent_frame: true
+enable_rerun: true
 
 act_policy:
   ckpt_dir: ./policy/act/
   chunk_size: 100
   hidden_dim: 512
   dim_feedforward: 3200
-  temporal_agg: True
+  temporal_agg: true
   max_timesteps: 10000
-  camera_names: ['cam_head', 'cam_right_wrist']
+  camera_names: ['cam_head', 'cam_left_wrist', 'cam_right_wrist']
 
 robot:
   type: alicia_piper_robot

@@ -242,34 +242,79 @@ class CollectAny:
     def add_extra_episode_info(self, extra_info):
         self.extra_episode_info.update(extra_info)
 
+# def merge_config(base, incoming, prefix: str = ""):
+#     conflicts = []
+
+#     for k, v in incoming.items():
+#         full_key = f"{prefix}.{k}" if prefix else k
+
+#         if k not in base:
+#             base[k] = v
+#             continue
+
+#         base_v = base[k]
+
+#         # dict → 递归 merge
+#         if isinstance(base_v, dict) and isinstance(v, dict):
+#             sub_conflicts = merge_config(base_v, v, full_key)
+#             conflicts.extend(sub_conflicts)
+
+#         # 非 dict，值不同 → 冲突
+#         elif base_v != v:
+#             conflicts.append((full_key, base_v, v))
+
+#         # else: 值相同 → 什么都不做
+
+#     for key, base_v, inc_v in conflicts:
+#         debug_print(
+#             "merge_config",
+#             f"conflict at '{key}': keep={base_v}, incoming={inc_v}",
+#             "WARNING",
+#         )
+
+#     return base
+
 def merge_config(base, incoming, prefix: str = ""):
-    conflicts = []
+    """递归合并配置。
 
-    for k, v in incoming.items():
-        full_key = f"{prefix}.{k}" if prefix else k
+    合并规则：
+    1. incoming 中不存在于 base 的字段，补充到 base。
+    2. 两边都是字典时，递归合并。
+    3. 同一个字段值不同时，保留 base 当前值并打印警告。
+    """
 
-        if k not in base:
-            base[k] = v
+    for key, incoming_value in incoming.items():
+        full_key = f"{prefix}.{key}" if prefix else key
+
+        # 当前配置没有该字段，补充旧配置里的值。
+        if key not in base:
+            base[key] = incoming_value
             continue
 
-        base_v = base[k]
+        base_value = base[key]
 
-        # dict → 递归 merge
-        if isinstance(base_v, dict) and isinstance(v, dict):
-            sub_conflicts = merge_config(base_v, v, full_key)
-            conflicts.extend(sub_conflicts)
+        # 两边都是字典，继续递归。
+        if isinstance(base_value, dict) and isinstance(
+            incoming_value,
+            dict,
+        ):
+            merge_config(
+                base_value,
+                incoming_value,
+                full_key,
+            )
+            continue
 
-        # 非 dict，值不同 → 冲突
-        elif base_v != v:
-            conflicts.append((full_key, base_v, v))
-
-        # else: 值相同 → 什么都不做
-
-    for key, base_v, inc_v in conflicts:
-        debug_print(
-            "merge_config",
-            f"conflict at '{key}': keep={base_v}, incoming={inc_v}",
-            "WARNING",
-        )
+        # 值不相同时，保留当前 base 配置。
+        if base_value != incoming_value:
+            debug_print(
+                "merge_config",
+                (
+                    f"conflict at '{full_key}': "
+                    f"keep={base_value}, "
+                    f"incoming={incoming_value}"
+                ),
+                "WARNING",
+            )
 
     return base

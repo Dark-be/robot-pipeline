@@ -3,8 +3,9 @@ INFO_LEVEL: INFO  # DEBUG, INFO, ERROR
 collect:
   # 用于文件夹命名
   save_dir: ./data/
-  task_name: put_pen_into_pencil_case
-  type: 7-9
+  # task_name: put_pen_into_pencil_case
+  task_name: 7-27
+  type: stack_the_plates
   # eg.
   # save_dir: ./data/
   # task_name: stack_bowls

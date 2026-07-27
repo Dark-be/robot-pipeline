@@ -4,13 +4,13 @@ import time
 import numpy as np
 
 from robot.robot.base_robot import Robot
-from robot.controller.Alicia_teach_controller import AliciaTeachController
 from robot.controller.Piper_controller import PiperController
 
 from robot.sensor.v4l2_sensor import V4l2Sensor
 from robot.sensor.realsense_sensor import RealsenseSensor
 
 from robot.utils.base.data_handler import debug_print
+import rerun as rr
 
 
 class Alicia_Piper_Robot(Robot):
@@ -20,8 +20,8 @@ class Alicia_Piper_Robot(Robot):
 
         self.controllers = {
             "arm" : {
-                "slave_left_arm": PiperController("slave_left_arm", INFO="DEBUG"),
-                "slave_right_arm": PiperController("slave_right_arm", INFO="DEBUG"),
+                "slave_left_arm": PiperController("slave_left_arm"),
+                "slave_right_arm": PiperController("slave_right_arm"),
             },
         }
         self.sensors = {
@@ -64,6 +64,27 @@ class Alicia_Piper_Robot(Robot):
         self.set_collect_type({"arm": ["joint", "gripper"], "image": ["color"]})
         debug_print(self.type, f"[{datetime.now():%Y-%m-%d %H:%M:%S}] Setup complete.", "INFO")
         time.sleep(1)
+
+    def play_once(self, episode: Dict[str, Any], key_banned=None):
+        left_action = episode["master_left_arm"]
+        right_action = episode["master_right_arm"]
+        move_data = {
+            "arm": {
+                "slave_left_arm": left_action,
+                "slave_right_arm": right_action,
+            },
+        }
+        self.move(move_data, key_banned=key_banned)
+
+    def visualize(self):
+        data = self.sensor_data
+        for cam_name, cam_data in data.items():
+            img_bytes = cam_data.get("color")
+            if img_bytes is None:
+                debug_print(self.type, f"No color image data for {cam_name}. Skipping visualization.", "WARNING")
+                continue
+            # rr.log(f"cameras/{cam_name}", rr.EncodedImage(contents=img_bytes, media_type="image/jpeg"))
+            rr.log(f"cameras/{cam_name}", rr.Image(img_bytes))
 
     def reset(self):
         super().reset()

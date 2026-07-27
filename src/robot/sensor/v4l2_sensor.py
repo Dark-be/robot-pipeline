@@ -78,20 +78,57 @@ class V4l2Sensor(BaseVisionSensor):
         if not r:
             return None
         
+        # 循环读取直到收到完整的JPEG帧
+        # frame_data = b''
+        # max_retries = 100  # 防止死循环
+        # retry_count = 0
+
+        # while retry_count < max_retries:
+        #     buf = v4l2.v4l2_buffer()
+        #     buf.type = v4l2.V4L2_BUF_TYPE_VIDEO_CAPTURE
+        #     buf.memory = v4l2.V4L2_MEMORY_MMAP
+        #     fcntl.ioctl(self.fd, v4l2.VIDIOC_DQBUF, buf)
+
+        #     # 获取当前包的数据
+        #     chunk = self.buffers[buf.index][:buf.bytesused]
+        #     frame_data += chunk
+
+        #     # 重新入队缓冲区
+        #     fcntl.ioctl(self.fd, v4l2.VIDIOC_QBUF, buf)
+
+        #     # 检查是否收到完整的JPEG帧（查找结束标记）
+        #     if len(frame_data) >= 2 and frame_data[-2:] == b'\xff\xd9':
+        #         # 找到JPEG结束标记，说明帧完整
+        #         break
+
+        #     # 如果还没结束，继续等待下一个数据包
+        #     r, _, _ = select.select([self.fd], [], [], 0.1)
+        #     if not r:
+        #         debug_print(self.name, "Timeout waiting for complete frame", "WARNING")
+        #         return None
+
+        #     retry_count += 1
+
+        # if retry_count >= max_retries:
+        #     debug_print(self.name, "Max retries reached, frame may be incomplete", "ERROR")
+        #     return None
+        
         buf = v4l2.v4l2_buffer()
         buf.type = v4l2.V4L2_BUF_TYPE_VIDEO_CAPTURE
         buf.memory = v4l2.V4L2_MEMORY_MMAP
         fcntl.ioctl(self.fd, v4l2.VIDIOC_DQBUF, buf)
 
-        # cam_ns = int(buf.timestamp.secs * 1e9 + buf.timestamp.usecs * 1e3)
+        # # cam_ns = int(buf.timestamp.secs * 1e9 + buf.timestamp.usecs * 1e3)
 
-        data = self.buffers[buf.index][:buf.bytesused]
+        frame_data = self.buffers[buf.index][:buf.bytesused]
 
         fcntl.ioctl(self.fd, v4l2.VIDIOC_QBUF, buf)
 
         image = {}
         if "color" in self.collect_info:
-            img = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+            img = cv2.imdecode(np.frombuffer(frame_data, dtype=np.uint8), cv2.IMREAD_COLOR)
+            if img is None:
+                debug_print(self.name, "Failed to decode image", "ERROR")
             img = img[:, :, ::-1]  # BGR -> RGB
             if self.is_undistort:
                 img = self._undistort_fisheye(img)

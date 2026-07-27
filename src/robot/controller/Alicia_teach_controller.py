@@ -58,9 +58,12 @@ class AliciaTeachController(ArmController):
 		))
 		self.collect_process.start()
 
+	def set_joint(self, joint: np.array):
+		pass
+
 	def get_state(self):
 		data = self.shared_array.copy()
-
+		
 		return {
       		"joint": data[:6],
       		"gripper": data[6],

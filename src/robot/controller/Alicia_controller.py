@@ -38,7 +38,7 @@ class AliciaController(ArmController):
 			debug_mode=False,
 			auto_connect=True,
 		)
-
+		self.robot.torque_control('off')
 		debug_print(self.name, f"setup success, port={port}", self.INFO)
 
 	def disconnect(self):
