@@ -1,6 +1,6 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
 base_cfg="${1:?base_cfg required}"
+shift 1
 
-python3 pipeline/reset.py --base_cfg "${base_cfg}"
+uv run pipeline/reset.py \
+  --base_cfg "${base_cfg}" \
+  "$@"

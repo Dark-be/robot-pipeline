@@ -16,7 +16,7 @@ def get_collector(base_cfg):
           save_dir: ./data/test/dual_alicia_teleop
           image_format: jpeg
     """
-    cfg = base_cfg.get("collector", {})
+    cfg = base_cfg.get("collector")
     collector_type = cfg.get("type")
 
     if collector_type not in COLLECTOR_REGISTRY:

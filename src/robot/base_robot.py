@@ -20,17 +20,25 @@ class Robot:
     def is_ready(self):
         return self.ready
 
-    def get_obs(self):
+    def get_controller_obs(self):
         if self.controllers is not None:
             for controller in self.controllers.values():
                 data = controller.get()
                 self.controller_data[controller.name] = data
+        return self.controller_data.copy()
+
+    def get_sensor_obs(self):
         if self.sensors is not None:
             for sensor in self.sensors.values():
                 data = sensor.get()
                 self.sensor_data[sensor.name] = data
+        return self.sensor_data.copy()
 
-        return [self.controller_data.copy(), self.sensor_data.copy()]
+    def get_obs(self):
+        controller_obs = self.get_controller_obs()  # 更新 controller_data
+        sensor_obs = self.get_sensor_obs()      # 更新 sensor_data
+
+        return [controller_obs, sensor_obs]
 
     def disconnect(self):
         for controller in self.controllers.values():

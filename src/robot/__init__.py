@@ -1,9 +1,9 @@
 from .dual_test_robot import Dual_Test_Robot
-#from .alicia_piper_teleop_robot import Alicia_Piper_Teleop_Robot
+from .alicia_piper_teleop_robot import Alicia_Piper_Teleop_Robot
 
 ROBOT_REGISTRY = {
     "dual_test_robot": Dual_Test_Robot,
-    #dual_alicia_teleop_robot": Alicia_Piper_Teleop_Robot,
+    "alicia_piper_robot": Alicia_Piper_Teleop_Robot,
 }
 
 def get_robot(base_cfg):

@@ -2,7 +2,7 @@ import time
 import numpy as np
 import pyrealsense2 as rs
 
-from sensor.base_vision_sensor import BaseVisionSensor
+from sensor.sensor import Sensor
 from utils.base.data_handler import debug_print
 import cv2
 
@@ -12,7 +12,7 @@ def find_device_by_serial(devices, serial):
             return i
     return None
 
-class RealsenseSensor(BaseVisionSensor):
+class RealsenseSensor(Sensor):
     def __init__(self, name):
         super().__init__(name)
         self.enable_depth = False

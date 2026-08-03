@@ -25,15 +25,15 @@ class AliciaTeachController(ArmController):
 		self.stop_event = Event()
 
 		self.shm = shared_memory.SharedMemory(
-    		create=True,
-    		size=np.dtype(np.float32).itemsize * 13
+    	create=True,
+    	size=np.dtype(np.float32).itemsize * 13
 		)
 		self.shm_name = self.shm.name  
 
 		self.shared_array = np.ndarray(
-    		(13,),
-    		dtype=np.float32,
-    		buffer=self.shm.buf
+    	(13,),
+    	dtype=np.float32,
+    	buffer=self.shm.buf
 		)
 		
 		self.state = {"joint": None, "gripper": None}
@@ -55,10 +55,19 @@ class AliciaTeachController(ArmController):
 		data = self.shared_array.copy()
 		
 		return {
-      		"joint": data[:6],
-      		"gripper": data[6],
-			"pose": data[7:13]
-    	}
+      	"joint": data[:6],
+      	"gripper": data[6],
+				"pose": data[7:13]
+  	}
+
+	def get_joint(self):
+		return self.get_state()["joint"]
+
+	def get_gripper(self):
+		return self.get_state()["gripper"]
+
+	def get_position(self):
+		return self.get_state()["pose"]
 		
 	def stop(self):
 		if self.shm:

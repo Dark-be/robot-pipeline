@@ -6,12 +6,12 @@ from utils.base.data_handler import debug_print
 from pyAgxArm import create_agx_arm_config, AgxArmFactory, ArmModel, PiperFW
 
 MIT_CTRL_CFG = [
-  { "vel_ref": 0.0, "kp": 3.0, "kd": 0.7, "t_ref": 0.0},
-  { "vel_ref": 0.0, "kp": 3.0, "kd": 0.8, "t_ref": 0.0},
-  { "vel_ref": 0.0, "kp": 3.0, "kd": 0.8, "t_ref": 0.0},
-  { "vel_ref": 0.0, "kp": 3.0, "kd": 0.6, "t_ref": 0.0},
-  { "vel_ref": 0.0, "kp": 3.0, "kd": 0.6, "t_ref": 0.0},
-  { "vel_ref": 0.0, "kp": 2.0, "kd": 0.5, "t_ref": 0.0},
+  { "vel_ref": 0.0, "kp": 4.0, "kd": 0.8, "t_ref": 0.0},
+  { "vel_ref": 0.0, "kp": 6.0, "kd": 1.2, "t_ref": 0.0},
+  { "vel_ref": 0.0, "kp": 4.0, "kd": 0.9, "t_ref": 0.0},
+  { "vel_ref": 0.0, "kp": 4.0, "kd": 0.5, "t_ref": 0.0},
+  { "vel_ref": 0.0, "kp": 4.0, "kd": 0.5, "t_ref": 0.0},
+  { "vel_ref": 0.0, "kp": 4.0, "kd": 0.4, "t_ref": 0.0},
 ]
 
 class PiperController(ArmController):
@@ -132,11 +132,7 @@ if __name__=="__main__":
     print(f"Initial state: {state}")
     
     controller.set_gripper(0.99)
-    for i in range(40):
-        controller.set_joint(np.array([0.036, 0.046, -0.407, -0.081, 0.471, 0.216]))
-        time.sleep(0.05)  # Wait for the commands to take effect
 
-    controller.set_joint(np.array([0.036, 0.046, -0.407, -0.081, 0.471, 0.216]))
     time.sleep(1)  # Wait for the commands to take effect
     state = controller.get_state()
     print(f"State after commands: {state}")

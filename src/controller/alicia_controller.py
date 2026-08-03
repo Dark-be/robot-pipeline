@@ -1,10 +1,7 @@
-import time
-
 import numpy as np
 
 from controller.arm_controller import ArmController
 from utils.base.data_handler import debug_print
-from robot.types import CONTROLLER_TYPE
 
 import alicia_d_sdk
 
@@ -50,7 +47,7 @@ class AliciaController(ArmController):
 		state = self.robot.get_robot_state("joint_gripper")
 		if state is None:
 			return {"joint": None, "gripper": None, "pose": None}
-		offset = [0, -2.0, 0.4, 0, 0.6, 0]  # SDK 角度偏移（弧度），需要根据实际情况调整
+		offset = [0, -2.0, 0.4, 0, 0.9, 0]  # SDK 角度偏移（弧度），需要根据实际情况调整
 		multiplier = [1, -1.3, -1, -1, -1, -1]
 
 		joint = np.asarray(state.angles, dtype=float)

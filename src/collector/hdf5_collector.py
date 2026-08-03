@@ -23,6 +23,8 @@ import cv2
 import h5py
 import numpy as np
 
+from utils.base.data_handler import debug_print
+
 # standard_obs keys (see Robot.get_standard_obs())
 KEY_QPOS = "observations/qpos"
 KEY_ACTION = "action"
@@ -31,10 +33,12 @@ CAMERA_PREFIX = "observations/images/"
 
 class ActHDF5Collector:
     def __init__(self, collector_config: dict):
+        self.name = "ActHDF5Collector"
         self._save_dir = Path(collector_config.get("save_dir", "./data"))
         self._save_dir.mkdir(parents=True, exist_ok=True)
         self._image_format = collector_config.get("image_format", "jpeg")  # "jpeg" | "raw"
         self._timesteps: list[dict] = []
+        debug_print(self.name, f"Initialized with save_dir={self._save_dir}, image_format={self._image_format}", "INFO")
 
     # -- public API ---------------------------------------------------------
 
@@ -75,7 +79,7 @@ class ActHDF5Collector:
 
         qpos_dim = self._timesteps[0]["qpos"].shape[0]
         action_dim = self._timesteps[0]["action"].shape[0]
-        print(f"Collector finish: episode {episode_idx}, {num} steps, "
+        debug_print(self.name, f"Collector finish: episode {episode_idx}, {num} steps, "
               f"qpos_dim={qpos_dim}, action_dim={action_dim}")
 
         with h5py.File(path, "w") as f:
