@@ -1,25 +1,25 @@
 INFO_LEVEL: INFO  # DEBUG, INFO, ERROR
 
 collect:
-  # 用于文件夹命名
-  save_dir: ./data/
-  # task_name: put_pen_into_pencil_case
-  task_name: 7-31
-  type: move_objects_into_box
-  # eg.
-  # save_dir: ./data/
-  # task_name: stack_bowls
-  # type: test
-  # 保存路径: data/stack_bowls/test/***.hdf5
+  task_name: stack_bowls
+  type: alicia_piper
 
-  save_format: hdf5
-  num_episode: 300
-
+  num_episode: 50
   save_freq: 30
-  skip_silent_frame: true
+
+collector:
+  type: act_hdf5
+  save_dir: ./data/
+  qpos_keys: ["slave_left_arm", "slave_right_arm"]
+  action_keys: ["master_left_arm", "master_right_arm"]
+  image_sources: {cam_head: color, cam_left_wrist: color, cam_right_wrist: color}
+  append_timestamp: true
+  only_moving: true
+  move_tolerance: 0.01
 
 robot:
-  type: dual_alicia_teleop_robot
+  name: alicia_piper
+  type: dual_test_robot
   control_mode: joint
   MASTER_PORT:
     left_arm: "/dev/ttyACM0"

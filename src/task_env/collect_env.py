@@ -1,140 +1,109 @@
 import time
+import numpy as np
+from robot import get_robot
+from collector import get_collector
+from utils.base.data_handler import debug_print, read_key, KEY_DICT
 
-from robot.utils.base.data_handler import debug_print, read_key, KEY_DICT
-from .base_env import BaseEnv
-import rerun as rr
 
-# 数据收集环境，负责控制数据收集的流程和逻辑
-class CollectEnv(BaseEnv):
-    # def __init__(self, base_cfg):
-    #     super().__init__(base_cfg=base_cfg)
-    #     self.enable_rerun = base_cfg.get("enable_rerun", False)
+class CollectEnv:
+    """数据收集环境 —— 组合 Robot + Collector，控制采集流程。
+
+    Robot 只负责管理自身状态（控制器/传感器读写、同步），
+    Collector 只负责将数据序列化为 HDF5，
+    Env 负责从 Robot 的原始数据中提取出 qpos / action / images。
+    """
 
     def __init__(self, base_cfg):
-        super().__init__(base_cfg=base_cfg)
+        self.name = "CollectEnv"
+        self.base_cfg = base_cfg
+        self.robot = get_robot(base_cfg)
+        self.collector = get_collector(base_cfg)
 
-        collect_cfg = base_cfg.get("collect", {})
+        self.collect_env_cfg = self.base_cfg.get("collect_env", {})
+        self.save_freq = self.collect_env_cfg.get("save_freq", 30)  # 默认 30 Hz
+        if self.save_freq <= 0:
+            debug_print(self.name, f"Invalid save_freq={self.save_freq}, reset to 30.", "WARNING")
+            self.save_freq = 30
 
-        self.enable_rerun = collect_cfg.get("enable_rerun", True)
+        self.episode_idx = 0
+        self.finish_flag = False
 
-    
-    def set_up(self):
-        super().set_up()
-        if self.enable_rerun:
-            rr.init("collection", spawn=False)
-            server_url = rr.serve_grpc(
-                grpc_port=9876,
-                server_memory_limit="1GiB",
-                newest_first=False,
-                cors_allow_origin=["*"]
-            )
-            debug_print("COLLECT", f"Rerun gRPC 服务器已启动: {server_url}", "INFO")
-            rr.serve_web_viewer(
-                web_port=9090,  # Web 界面端口
-                open_browser=False,  # 自动打开浏览器
-                # connect_to=server_url  # 连接到 gRPC 服务器
-            )
+    # ------------------------------------------------------------------
+    # 生命周期
+    # ------------------------------------------------------------------
+
+    def env_setup(self):
+        self.robot.connect()
 
     def env_finish(self):
-        super().env_finish()
+        self.robot.disconnect()
 
-    # 收集一个回合的数据，直到用户按下Enter键或脚踏开关触发结束
+    def set_episode_idx(self, idx: int):
+        self.episode_idx = idx
+    # ------------------------------------------------------------------
+    # 采集主循环
+    # ------------------------------------------------------------------
     def collect_one_episode(self):
+        """采集一个 episode 的数据。
+        流程:
+          1. 复位机器人
+          2. 等待就绪 + 按 s 开始
+          3. 循环: get_obs → sync → 提取 qpos/action/images → collector.collect
+          4. 按 e 结束 → collector.finish()
+        """
         if self.finish_flag:
-            debug_print("COLLECT", "Data collection has been finished by user. Skipping collect_one_episode.", "INFO")
+            debug_print(self.name, "Data collection has been finished by user. Skipping.", "INFO")
             return
-        
-        # 重置机器人状态，等待用户准备好并按下Enter键开始数据收集
+
+        # --- 复位 + 等待就绪 ---
         self.robot.reset()
-        debug_print("COLLECT", "Waiting for robot ready and Enter key...", "INFO")
-        # 检查配置文件中是否指定了数据收集的频率，默认为30Hz
-        if 'collect' not in self.base_cfg or 'save_freq' not in self.base_cfg['collect']:
-            debug_print("COLLECT", "Missing 'save_freq' in config. Using default 30Hz.", "WARNING")
-            save_freq = 30
-        else:
-            save_freq = self.base_cfg['collect']["save_freq"]
-
-        if save_freq <= 0:
-            debug_print(
-                "COLLECT",
-                f"Invalid save_freq: {save_freq}. Resetting to 30Hz.",
-                "ERROR",
-            )
-            save_freq = 30
-
-
-        # 等待机器人准备好，如果使用脚踏开关则等待脚踏开关触发，否则等待用户按下Enter键
-        while not self.robot.is_start():
-            debug_print("COLLECT", "Robot not started yet, verify hardware connection.", "WARNING")
+        debug_print(self.name, "Waiting for robot ready...", "INFO")
+        while not self.robot.is_ready():
+            debug_print(self.name, "Robot not started yet, verify hardware.", "WARNING")
             time.sleep(1)
 
-        debug_print("COLLECT", "Robot READY. Press s to start recording... or q to quit.", "INFO")
-        
-        run_flag = True
-        while run_flag:
+        debug_print(self.name, "Robot READY. Press s to start, q to quit.", "INFO")
+        while True:
             ch = read_key()
             if ch == KEY_DICT["START"]:
-                run_flag = False
+                break
             if ch == KEY_DICT["QUIT"]:
-                debug_print("COLLECT", "Data collection interrupted by user (q pressed). Exiting.", "WARNING")
+                debug_print(self.name, "User quit before recording.", "WARNING")
                 self.finish_flag = True
                 return
             time.sleep(1 / 20)
-        
-        debug_print("COLLECT", "Recording... Press e to finish.", "INFO")
 
-        avg_collect_time, collect_num = 0.0, 0
+        # --- 采集循环 ---
+        debug_print(self.name, "Recording... Press e to finish.", "INFO")
+        collect_num = 0
 
         while True:
-            start_time = time.monotonic()
+            loop_start = time.monotonic()
 
-            data = self.robot.get_obs()
+            standard_obs = self.robot.get_standard_obs()
             self.robot.sync()
-            self.robot.collect(data)
+            self.collector.collect(standard_obs)
 
-            if self.enable_rerun:
-                if collect_num % 5 == 0:
-                    self.robot.visualize()
-                
-
-            # 检查用户是否按下结束数据收集的键
             ch = read_key()
             if ch == KEY_DICT["END"]:
-                self.robot.collect_finish(self.episode_idx)
+                self.collector.finish(self.episode_idx)
+                debug_print(self.name, f"Episode {self.episode_idx} finished.", "INFO")
                 break
             elif ch == KEY_DICT["QUIT"]:
-                debug_print("COLLECT", "Data collection interrupted by user (q pressed). Exiting.", "WARNING")
+                debug_print(self.name, "User quit during recording.", "WARNING")
                 self.finish_flag = True
-                return
-            
+                break
+
             collect_num += 1
 
-            # 控制数据收集的频率，确保按照指定的save_freq进行数据保存
-            eplased_time = time.monotonic() - start_time
-            wait_time = 1 / save_freq - eplased_time
-            # 超时
-            if wait_time <= 0:
-                avg_collect_time += eplased_time
-                debug_print("COLLECT", f"Collecting time over limit. t={eplased_time}", "WARNING")
+            elapsed = time.monotonic() - loop_start
+            wait = 1.0 / self.save_freq - elapsed
+            if wait > 0:
+                time.sleep(wait)
             else:
-                avg_collect_time += 1 / save_freq
-                debug_print("COLLECT", f"Wait_time: {wait_time} / {1 / save_freq}", "INFO")
-                time.sleep(wait_time)
-            # debug_print("COLLECT", f"get obs time: {get_obs_time}", "WARNING")
-            # debug_print("COLLECT", f"sync time: {sync_time}", "WARNING")
-            # debug_print("COLLECT", f"frame time: {current_time-last_time}", "WARNING")
+                debug_print(self.name, f"Collect over limit: {elapsed:.3f}s > {1/self.save_freq:.3f}s", "WARNING")
 
-        # 额外信息记录：
-        # 1. 本回合数据收集的总次数（collect_num），即在本回合中调用了多少次self.robot.collect(data)
-        # 2. 平均数据收集时间间隔（avg_time_interval），即每次数据收集的平均时间，单位为秒
-        extra_info = {}
-        if collect_num == 0:
-            debug_print("COLLECT", "No data collected during this episode. Setting avg_time_interval to 0.", "WARNING")
-            avg_collect_time = 0.0
+        if collect_num > 0:
+            debug_print(self.name, f"Episode done: {collect_num} frames", "INFO")
         else:
-            debug_print("COLLECT", f"Total frame: {collect_num}", "INFO")
-            
-            avg_collect_time = avg_collect_time / collect_num
-            extra_info["collect_num"] = collect_num
-            extra_info["avg_time_interval"] = avg_collect_time
-        self.robot.collector.add_extra_cfg_info(extra_info)
+            debug_print(self.name, "No frames collected this episode.", "WARNING")

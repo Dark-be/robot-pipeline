@@ -1,8 +1,7 @@
 import argparse, os
-from robot.config._GLOBAL_CONFIG import CONFIG_DIR
-from robot.utils.base.load_file import load_yaml
-from robot.utils.base.data_handler import debug_print
-
+from config._GLOBAL_CONFIG import CONFIG_DIR
+from utils.base.load_file import load_yaml
+from utils.base.data_handler import debug_print
 from task_env.collect_env import CollectEnv
 # 定义命令行参数并解析
 # --task_name: 任务名称，必填参数
@@ -16,18 +15,14 @@ args_cli = parser.parse_args()
 if __name__ == "__main__":
     # 载入config文件夹下的基础配置文件 --base_cfg
     base_cfg = load_yaml(os.path.join(CONFIG_DIR, f'{args_cli.base_cfg}.yml'))
-    task_name = base_cfg["collect"]["task_name"]
-    if task_name is None:
-        base_cfg["collect"]["task_name"] = "default_task"
+    os.environ["INFO_LEVEL"] = base_cfg.get("INFO_LEVEL", "INFO")
 
-    # 设置日志级别，默认为INFO，可以通过基础配置文件中的INFO_LEVEL字段进行覆盖
-    os.environ["INFO_LEVEL"] = base_cfg.get("INFO_LEVEL", "INFO") # DEBUG, INFO, ERROR
-    
+    env_cfg = base_cfg.get("collect_env", {})
     START = args_cli.st_idx
-    END = base_cfg["collect"].get("num_episode") + START
+    END = env_cfg.get("num_episode", 50) + START
 
     TASK_ENV = CollectEnv(base_cfg)
-    TASK_ENV.set_up()
+    TASK_ENV.env_setup()
     
     for episode_id in range(START, END):
         if TASK_ENV.finish_flag:

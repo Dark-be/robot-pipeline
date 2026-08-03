@@ -1,0 +1,17 @@
+INFO_LEVEL: INFO  # DEBUG, INFO, ERROR
+
+collect_env:
+  num_episode: 50
+  save_freq: 30
+
+collector:
+  type: act_hdf5
+  save_dir: ./data/7-31/test_task
+  image_format: jpeg
+
+robot:
+  name: test_robot
+  type: dual_test_robot
+  init_qpos:
+    left_arm: [0, 0, 0, 0, 0, 0, 1]
+    right_arm: [0, 0, 0, 0, 0, 0, 1]

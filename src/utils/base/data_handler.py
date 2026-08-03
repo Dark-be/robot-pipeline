@@ -12,7 +12,7 @@ from typing import *
 from typing import Dict, Any, List
 # from skimage.metrics import structural_similarity as ssim
 
-from robot.config._GLOBAL_CONFIG import LOG_PATH
+from config._GLOBAL_CONFIG import LOG_PATH
 
 def _get_log_file():
     log_dir = LOG_PATH

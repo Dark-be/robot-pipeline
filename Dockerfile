@@ -25,8 +25,4 @@ cudnn9-cuda-12 \
 
 WORKDIR /root/prj/robot-pipeline
 
-# COPY requirements.txt /tmp/requirements.txt
-# RUN pip3 install --no-cache-dir -r /tmp/requirements.txt \
-#     --index-url https://pypi.tuna.tsinghua.edu.cn/simple
-
 CMD ["/bin/bash"]
