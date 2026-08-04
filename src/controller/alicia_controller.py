@@ -5,20 +5,16 @@ from utils.base.data_handler import debug_print
 
 import alicia_d_sdk
 
-from alicia_d_sdk.utils.logger import BeautyLogger, LogLevel
-
-# 只显示 ERROR 级别的日志
-logger = BeautyLogger(
-    log_dir="logs", 
-    log_name="app.log", 
-    min_level=LogLevel.ERROR
-)
+import robocore as rc
+from robocore.kinematics import forward_kinematics
+from robocore.transform import matrix_to_euler, matrix_to_quaternion
 
 class AliciaController(ArmController):
 	def __init__(self, name="alicia_controller"):
 		super().__init__(name)
 		self.robot = None
 		self.port: str = "/dev/ttyACM0"
+		# rc.set_backend("numpy")
 
 	def connect(self, port: str):
 		self.port = port
@@ -54,8 +50,16 @@ class AliciaController(ArmController):
 		joint = np.array([(joint[i] + offset[i]) * multiplier[i] for i in range(6)], dtype=float)
 		gripper_raw = float(state.gripper)  # SDK: 0-1000
 		gripper = max(0.0, min(1.0, gripper_raw / 1000.0))
-		
-		return {"joint": joint, "gripper": gripper}
+
+		T_fk = forward_kinematics(
+      self.robot.robot_model,
+      state.angles,
+      return_end=True
+    )
+		position_fk = T_fk[:3, 3]
+		rotation_fk = T_fk[:3, :3]
+		euler_fk = matrix_to_euler(rotation_fk)
+		return {"joint": joint, "gripper": gripper, "pose": np.append(position_fk, euler_fk)}  # 返回机械臂状态信息，包括关节角度、夹爪状态和末端位姿
 
 	def get_information(self):
 		if self.collect_info is None:

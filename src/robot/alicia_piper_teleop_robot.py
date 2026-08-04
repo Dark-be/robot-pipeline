@@ -57,10 +57,10 @@ class Alicia_Piper_Teleop_Robot(Robot):
             debug_print(self.name, "CAMERA_SERIALS for right is not configured. Please check your config.yml", "ERROR")
 
         self.controllers["master_left_arm"].connect(port=master_port_left)
-        self.controllers["master_left_arm"].set_collect_info(["joint", "gripper"])
+        self.controllers["master_left_arm"].set_collect_info(["joint", "gripper", "pose"])
         
         self.controllers["master_right_arm"].connect(port=master_port_right)
-        self.controllers["master_right_arm"].set_collect_info(["joint", "gripper"])
+        self.controllers["master_right_arm"].set_collect_info(["joint", "gripper", "pose"])
 
         self.controllers["slave_left_arm"].connect(port=slave_port_left)
         self.controllers["slave_left_arm"].set_collect_info(["joint", "gripper"])
@@ -214,6 +214,7 @@ class Alicia_Piper_Teleop_Robot(Robot):
 
 
     def sync(self):
+        #print(f"Master Right Arm Pose: {np.round(self.controller_data['master_right_arm']['pose'], 4)}")
         master_left_data = self.controller_data.get("master_left_arm")
         master_right_data = self.controller_data.get("master_right_arm")
         if not master_left_data or not master_right_data:

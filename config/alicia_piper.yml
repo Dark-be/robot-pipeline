@@ -8,7 +8,7 @@ collect_env:
 
 collector:
   type: act_hdf5
-  save_dir: ./data/7-31/test_task
+  save_dir: ./data/8-4/sweep_the_rubbish
   image_format: jpeg
 
 robot:

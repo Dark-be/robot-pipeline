@@ -10,7 +10,7 @@ MIT_CTRL_CFG = [
   { "vel_ref": 0.0, "kp": 6.0, "kd": 1.2, "t_ref": 0.0},
   { "vel_ref": 0.0, "kp": 4.0, "kd": 0.9, "t_ref": 0.0},
   { "vel_ref": 0.0, "kp": 4.0, "kd": 0.5, "t_ref": 0.0},
-  { "vel_ref": 0.0, "kp": 4.0, "kd": 0.5, "t_ref": 0.0},
+  { "vel_ref": 0.0, "kp": 6.0, "kd": 0.5, "t_ref": 0.0},
   { "vel_ref": 0.0, "kp": 4.0, "kd": 0.4, "t_ref": 0.0},
 ]
 

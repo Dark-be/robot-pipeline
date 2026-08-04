@@ -101,7 +101,7 @@ def collect_alicia(shm_name, name, port, hz, stop_event):
 			start_time = time.monotonic()
 
 			data = alicia.get_state()  # 获取数据
-			shared = data["joint"].tolist() + [data["gripper"]] + [0, 0, 0, 0, 0, 0]  # joint(6) + gripper(1) + eef(6)
+			shared = data["joint"].tolist() + [data["gripper"]] + data["pose"].tolist()  # joint(6) + gripper(1) + eef(6)
 			np.ndarray((13,), dtype=np.float32, buffer=shm.buf)[:] = shared
 
 			frame_time = time.monotonic() - start_time

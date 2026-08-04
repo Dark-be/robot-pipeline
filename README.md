@@ -38,3 +38,5 @@ bash scripts/deploy_act_policy.sh config-name
 ```bash
 uv run pipeline/rerun_visual.py path/to/hdf5
 ```
+
+Piper mit 控制参数在 controller.piper_controller 中定义
