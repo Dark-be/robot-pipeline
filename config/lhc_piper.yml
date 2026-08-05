@@ -2,7 +2,7 @@ INFO_LEVEL: INFO  # DEBUG, INFO, ERROR
 collect:
   # 用于文件夹命名
   save_dir: ./data/
-  task_name: 7-16
+  task_name: 8-5
   type: swave_the_rubbish
   # eg.
   # save_dir: ./data/

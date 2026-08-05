@@ -41,7 +41,8 @@ class ActHDF5Collector:
         debug_print(self.name, f"Initialized with save_dir={self._save_dir}, image_format={self._image_format}", "INFO")
 
     # -- public API ---------------------------------------------------------
-
+    def set_save_dir(self, path):
+        self._save_dir = Path(path)
     def _to_image(self, val):
         is_jpeg = isinstance(val, np.ndarray) and val.ndim == 1 and val.dtype == np.uint8
 

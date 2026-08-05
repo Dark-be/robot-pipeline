@@ -3,6 +3,9 @@ INFO_LEVEL: INFO  # DEBUG, INFO, ERROR
 collect_env:
   num_episode: 50
   save_freq: 30
+  visualize_freq: 10
+  max_frames: 1800
+  enable_rerun: true
 
 collector:
   type: act_hdf5

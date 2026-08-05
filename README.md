@@ -1,6 +1,11 @@
 # Robot Pipeline
 基于Python的机器人数据采集、回放和可视化工具
 
+## 安装
+```bash
+uv sync
+uv pip install -e third_party/xxx
+
 ## 接入机器人
 1. 在src/robot/controller中接入机械臂，在src/robot/sensor中接入传感器
 2. 在src/robot中组装机器人，并设置采集数据类型

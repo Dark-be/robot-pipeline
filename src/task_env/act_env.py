@@ -1,16 +1,15 @@
-import torch
+
 import numpy as np
 import os
-import pickle
 import time
 from typing import Any, Dict, List
 from einops import rearrange
-# import torchvision.transforms as transforms
-from robot.utils.base.data_handler import debug_print, read_key, KEY_DICT
-from .base_env import BaseEnv
+from utils.base.data_handler import debug_print, read_key, KEY_DICT
 import threading
 import rerun as rr
 
+import pickle
+import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import torchvision.transforms as transforms
@@ -28,27 +27,13 @@ class ACTPolicy(nn.Module):
         self.kl_weight = policy_cfg['kl_weight']
         print(f'KL Weight {self.kl_weight}')
 
-    def __call__(self, qpos, image, actions=None, is_pad=None):
+    def __call__(self, qpos, image):
         env_state = None
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                          std=[0.229, 0.224, 0.225])
         image = normalize(image)
-        if actions is not None: # training time
-            actions = actions[:, :self.model.num_queries]
-            is_pad = is_pad[:, :self.model.num_queries]
-
-            a_hat, is_pad_hat, (mu, logvar) = self.model(qpos, image, env_state, actions, is_pad)
-            total_kld, dim_wise_kld, mean_kld = kl_divergence(mu, logvar)
-            loss_dict = dict()
-            all_l1 = F.l1_loss(actions, a_hat, reduction='none')
-            l1 = (all_l1 * ~is_pad.unsqueeze(-1)).mean()
-            loss_dict['l1'] = l1
-            loss_dict['kl'] = total_kld[0]
-            loss_dict['loss'] = loss_dict['l1'] + loss_dict['kl'] * self.kl_weight
-            return loss_dict
-        else: # inference time
-            a_hat, _, (_, _) = self.model(qpos, image, env_state) # no action, sample from prior
-            return a_hat
+        a_hat, _, (_, _) = self.model(qpos, image, env_state) # no action, sample from prior
+        return a_hat
         
 
 def load_policy(policy_cfg: Dict[str, Any]):
@@ -114,11 +99,9 @@ _DEFAULT_DUAL_ARM_MAPPING: List[Dict[str, Any]] = [
     },
 ]
 
-class ACTEnv(BaseEnv):
+class ACTEnv:
     def __init__(self, base_cfg):
-        super().__init__(base_cfg=base_cfg)
         self.name = "ACTEnv"
-        self.enable_rerun = base_cfg.get("enable_rerun", False)
 
         self.policy_cfg = base_cfg.get("act_policy", {})
         debug_print(self.name, f"Policy config: {self.policy_cfg}", "INFO")
@@ -138,8 +121,7 @@ class ACTEnv(BaseEnv):
         self.inference_fps = 10
         self.control_fps = 30
 
-    def set_up(self):
-        super().set_up()
+    def env_setup(self):
         self.policy, self.pre_process, self.post_process = load_policy(self.policy_cfg)
 
         self.stop_thread = False

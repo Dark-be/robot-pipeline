@@ -44,6 +44,10 @@ class PiperController(ArmController):
       debug_print(self.name, f"Disconnected from Piper on port {self.port}", "INFO")
       self.robot = None
 
+  def sleep(self):
+    if self.robot is not None:
+      self.robot.electronic_emergency_stop()
+
   def get_joint(self):
     if self.robot is None:
         raise RuntimeError("PiperController not set up. Call connect() before get_joint().")

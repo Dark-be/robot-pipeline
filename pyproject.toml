@@ -23,6 +23,8 @@ dependencies = [
   "ipython>=8.39.0",
 #  "torch==2.7.0+cu128",
 #  "torchvision==0.22.0+cu128"
+  "fastapi>=0.141.1",
+  "uvicorn[standard]>=0.52.1",
 ]
 
 [project.optional-dependencies]

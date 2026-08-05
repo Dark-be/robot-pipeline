@@ -97,7 +97,7 @@ class Alicia_Piper_Teleop_Robot(Robot):
             "action": np.concatenate([
                 self._slave_left_joint_cmd,
                 np.asarray(controller_data["master_left_arm"]["gripper"]).ravel(),
-                self._slave_left_joint_cmd,
+                self._slave_right_joint_cmd,
                 np.asarray(controller_data["master_right_arm"]["gripper"]).ravel(),
             ])
         }
@@ -189,19 +189,21 @@ class Alicia_Piper_Teleop_Robot(Robot):
 
     def visualize(self):
         controller_data = self.controller_data
-        for arm_name in ["slave_left_arm", "slave_right_arm"]:
-            arm_data = controller_data.get(arm_name)
-            if not arm_data:
-                debug_print(self.name, f"No data received for {arm_name}. Skipping visualization.", "WARNING")
-                continue
-            joint_angles = arm_data.get("joint")
-            gripper_pos = arm_data.get("gripper")
+        slave_left_data = controller_data.get("slave_left_arm")
+        slave_right_data = controller_data.get("slave_right_arm")
+        
+        if not slave_left_data or not slave_right_data:
+            debug_print(self.name, "No data received from slave controllers. Skipping visualization.", "WARNING")
+            return
+        left_joint = slave_left_data.get("joint")
+        right_joint = slave_right_data.get("joint")
+        left_gripper = slave_left_data.get("gripper")
+        right_gripper = slave_right_data.get("gripper")
 
-
-            rr.log(f"{arm_name}/qpos", rr.Scalars(np.asarray(joint_angles).ravel()))
-
-        rr.log("action_left", rr.Scalars(np.asarray(self._slave_left_joint_cmd).ravel()))
-        rr.log("action_right", rr.Scalars(np.asarray(self._slave_right_joint_cmd).ravel()))
+        #rr.log(f"left_arm", rr.Scalars(np.concatenate(np.asarray(left_joint).ravel()), np.asarray(self._slave_left_joint_cmd[:6]).ravel()))
+        #rr.log(f"slave_left_arm/gripper", rr.Scalars(np.asarray(left_gripper).ravel()))
+        #rr.log(f"right_arm", rr.Scalars(np.concatenate(np.asarray(right_joint).ravel(), np.asarray(self._slave_right_joint_cmd[:6]).ravel())))
+        #rr.log(f"slave_right_arm/gripper", rr.Scalars(np.asarray(right_gripper).ravel()))
 
         sensor_data = self.sensor_data
 
@@ -212,6 +214,17 @@ class Alicia_Piper_Teleop_Robot(Robot):
                 continue
             rr.log(f"images/{cam_name}", rr.EncodedImage(contents=img_bytes, media_type="image/jpeg"))
 
+
+    def clear_visualization(self):
+        debug_print(self.name, "Clearing Rerun visualization data.", "INFO")
+        rr.log("left_arm", rr.Clear(recursive=False))
+        rr.log("right_arm", rr.Clear(recursive=False))
+        for cam_name in self.sensors.keys():
+            rr.log(f"images/{cam_name}", rr.Clear(recursive=False))
+
+    def sleep(self):
+        self.controllers["slave_left_arm"].sleep()
+        self.controllers["slave_right_arm"].sleep()
 
     def sync(self):
         #print(f"Master Right Arm Pose: {np.round(self.controller_data['master_right_arm']['pose'], 4)}")

@@ -152,10 +152,9 @@ def debug_print(name, info, level="INFO", end="\n", flush=True):
 
 KEY_DICT = {
     "START": 's', # 开始采集的按键
-    "END": 'e', # 结束采集的按键
-    "RESTART": 'r', # 结束一轮采集并重置的按键
+    "STOP": 'e', # 结束采集的按键
     "QUIT": 'q', # 退出程序的按键
-    "VISUALIZE": 'v', # 可视化的按键
+    "RESET": 'r', # 重置机器人的按键
     "CONTINUE": 'c', # 继续下一步的按键
 }
 

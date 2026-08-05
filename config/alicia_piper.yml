@@ -1,14 +1,15 @@
 INFO_LEVEL: INFO  # DEBUG, INFO, ERROR
 
 collect_env:
-  enable_rerun: true
-
   num_episode: 50
   save_freq: 30
+  visualize_freq: 5
+  max_frames: 1800
+  enable_rerun: true
 
 collector:
   type: act_hdf5
-  save_dir: ./data/8-4/sweep_the_rubbish
+  save_dir: ./data/8-5/sweep_the_rubbish
   image_format: jpeg
 
 robot:

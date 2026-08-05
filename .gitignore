@@ -29,5 +29,5 @@ logs/
 /src/detr
 /test.py
 te.py
-
+/web
 /zmq

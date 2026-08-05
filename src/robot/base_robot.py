@@ -17,6 +17,15 @@ class Robot:
     def sync(self):
         pass
 
+    def visualize(self):
+        pass
+
+    def clear_visualization(self):
+        pass
+
+    def sleep(self):
+        pass
+
     def is_ready(self):
         return self.ready
 
